@@ -1,0 +1,37 @@
+/**
+ * Host half of dsh-macos-settings-shortcut.
+ *
+ * The package exists for its browser half: Cmd+, opening the Settings dialog
+ * that the shipped DSH Desktop web shell already renders. The browser client
+ * composes client bundles from the *active* Cordis rows whose package declares
+ * `dsh.client` (`@deepseek-ai/dsh-client-modules` scans the host Loader's
+ * entries), so an active host row is the activation precondition — not a place
+ * for host behavior.
+ *
+ * This half therefore does nothing on purpose:
+ *   - it installs no settings section, service, command, or event listener;
+ *   - it writes no files and touches no credentials, sessions, or settings;
+ *   - it keeps the row alive so the client half is served and activated.
+ *
+ * Named exports only (`apply` / `inject` / `name`): the vendored Cordis Loader
+ * activates the row through the module's named exports, which is the shape
+ * every working local bundle in this profile uses.
+ */
+
+/** Cordis row plugin name; must match the `cordis.patch.yml` row id and name. */
+const name = "dsh-macos-settings-shortcut";
+
+/** No host services are required: the browser half does all of the work. */
+const inject = [];
+
+/**
+ * Intentional no-op host half.
+ * @param ctx - Cordis context of the inserted row (unused by design).
+ */
+function apply(ctx) {
+	// A single activation breadcrumb at debug level, so an operator can confirm
+	// the row mounted without any behavior being attached to it.
+	ctx.logger?.debug?.("dsh-macos-settings-shortcut: host half active (no host behavior)");
+}
+
+export { apply, inject, name };

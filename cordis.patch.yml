@@ -1,0 +1,11 @@
+# Bundle patch layer for dsh-macos-settings-shortcut.
+#
+# A user bundle must INSERT its entry (id + providing package); a bare id entry
+# is an override of an existing entry and is skipped with a
+# "patch: entry not found" warning. The inserted host row is intentionally a
+# no-op plugin: its only job is to make the row active, because the browser
+# client composes its client half from the active Cordis rows whose packages
+# declare `dsh.client`.
+- insert:
+    - id: dsh-macos-settings-shortcut
+      name: dsh-macos-settings-shortcut

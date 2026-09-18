@@ -1,0 +1,58 @@
+# Repository hygiene for dsh-macos-settings-shortcut.
+#
+# Committed on purpose (do NOT ignore): src/, lib/ (prebuilt client artifacts
+# are required by the DSH profile installer), tests/, scripts/, package.json,
+# pnpm-lock.yaml, cordis.patch.yml, README.md, LICENSE, and .gitignore itself.
+
+# --- package-manager output -------------------------------------------------
+node_modules/
+.pnpm-store/
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tgz
+# pnpm runtime metadata (normally written inside node_modules/; never content)
+.pnpm-workspace-state-v1.json
+.package-map.json
+
+# --- test coverage ----------------------------------------------------------
+coverage/
+*.lcov
+.nyc_output/
+
+# --- local environment files ------------------------------------------------
+# No .env.example exists in this repository; the negation keeps one
+# committable if it is ever added.
+.env
+.env.*
+!.env.example
+
+# --- installer temporary files ----------------------------------------------
+# scripts/install.mjs writes <profile package.json>.dsh-settings-shortcut.tmp
+# next to its target and renames it into place; a leftover file is local state,
+# never repository content.
+*.dsh-settings-shortcut.tmp
+
+# --- local DSH state and secrets --------------------------------------------
+# scripts/install.mjs only ever touches a profile under $DSH_HOME. A copy of
+# such state (or of any credential file) is local data and must never become
+# repository content, even if one is accidentally created inside the checkout.
+/profiles/
+/settings.yaml
+.credentials.yaml
+.openai-codex-auth.json
+*.credentials.yaml
+
+# --- macOS ------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# --- editors ----------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
