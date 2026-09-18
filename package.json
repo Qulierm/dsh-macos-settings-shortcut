@@ -1,8 +1,7 @@
 {
   "name": "dsh-macos-settings-shortcut",
   "version": "0.1.0",
-  "private": true,
-  "description": "Local DSH Desktop profile bundle that makes Cmd+, open the existing Settings dialog on macOS without modifying the signed application.",
+  "description": "DSH Desktop plugin bundle that makes Cmd+, open the existing Settings dialog on macOS without modifying the signed application.",
   "type": "module",
   "license": "MIT",
   "main": "lib/index.js",
@@ -15,17 +14,44 @@
   },
   "files": [
     "lib",
-    "src",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
   },
+  "packageManager": "pnpm@11.8.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Qulierm/dsh-macos-settings-shortcut.git"
+  },
+  "homepage": "https://github.com/Qulierm/dsh-macos-settings-shortcut#readme",
+  "bugs": {
+    "url": "https://github.com/Qulierm/dsh-macos-settings-shortcut/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "macos",
+    "settings",
+    "keyboard-shortcut",
+    "cmd-comma",
+    "web-ui"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node scripts/build.mjs && node --test tests/*.test.mjs",
-    "install:profile": "node scripts/install.mjs"
+    "install:profile": "node scripts/install.mjs",
+    "verify:archive": "node scripts/verify-archive.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm test"
   },
   "dsh": {
     "bundle": {
@@ -33,6 +59,28 @@
     },
     "client": {
       "platform": "web"
+    },
+    "compatibility": {
+      "dsh": ">=0.1.5-rc.2",
+      "dshReleases": {
+        "0.1.5-rc.2": "compatible"
+      }
+    }
+  },
+  "dshhub": {
+    "schemaVersion": 1,
+    "displayName": "MacOS Settings Shortcut",
+    "summary": "Opens the existing DSH Desktop Settings dialog with Cmd+, on macOS. Profile-layer plugin: no application file is modified and no permission is required.",
+    "categories": [
+      "Web UI",
+      "Productivity"
+    ],
+    "surfaces": [
+      "web"
+    ],
+    "compatibility": {
+      "dsh": ">=0.1.5-rc.2",
+      "node": ">=20"
     }
   }
 }

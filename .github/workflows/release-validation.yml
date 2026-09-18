@@ -1,0 +1,59 @@
+name: Release validation
+
+# Manual-only release rehearsal. Start it from the Actions tab when preparing a
+# release; it never runs automatically.
+#
+# It rebuilds the generated artifacts, runs the test suite, re-checks the npm
+# archive payload, and finally performs an offline `npm publish --dry-run`: npm
+# prints the exact tarball it would upload and stops before any network write.
+#
+# This workflow cannot publish and holds no publishing authority: it has no
+# registry token, no `id-token` permission, no tag step, no release step, and
+# its only permissions are `contents: read`. Publishing stays a manual,
+# maintainer-authenticated action performed outside this repository.
+#
+# The npm cache lives under the runner's temporary directory, so the
+# machine-global npm cache is never used.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Offline release rehearsal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and test
+        run: pnpm test
+
+      - name: Pack the archive with an isolated npm cache
+        env:
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/npm-cache
+        run: |
+          mkdir -p "$NPM_CONFIG_CACHE"
+          npm pack --dry-run --json > "$RUNNER_TEMP/pack-report.json"
+
+      - name: Assert the archive payload
+        run: node scripts/verify-archive.mjs "$RUNNER_TEMP/pack-report.json"
+
+      - name: Dry-run the publication step (uploads nothing)
+        env:
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/npm-cache
+        run: npm publish --dry-run

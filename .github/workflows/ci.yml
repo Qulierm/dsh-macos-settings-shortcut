@@ -1,0 +1,74 @@
+name: CI
+
+# Build, test, and archive verification for every change.
+#
+# The npm cache always lives under the runner's temporary directory, so the
+# machine-global npm cache is never used.
+#
+# pnpm note: package.json pins `packageManager` to pnpm@11.8.0, and that pnpm
+# release declares `engines.node >= 22.13`, so it cannot run on Node 20. The
+# Node 20 leg therefore runs a pnpm release that supports Node 20 (pnpm 10
+# declares `engines.node >= 18.12`) from an isolated prefix, with pnpm's
+# `packageManager` self-switch disabled; the Node 22 leg uses the pinned pnpm
+# through corepack. Both legs run the same install, build, test, and archive
+# checks, and neither needs a registry account.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: "20"
+            pnpm_version: "10"
+            pnpm_bin: "$RUNNER_TEMP/pnpm-runtime/bin/pnpm"
+            manage_package_manager_versions: "false"
+          - node: "22"
+            pnpm_version: "11.8.0"
+            pnpm_bin: "pnpm"
+            manage_package_manager_versions: "true"
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Provide pnpm ${{ matrix.pnpm_version }} when the pinned one cannot run here
+        if: matrix.node == '20'
+        run: npm install --global --prefix "$RUNNER_TEMP/pnpm-runtime" "pnpm@${{ matrix.pnpm_version }}"
+
+      - name: Install dependencies
+        env:
+          npm_config_manage_package_manager_versions: ${{ matrix.manage_package_manager_versions }}
+        run: ${{ matrix.pnpm_bin }} install --frozen-lockfile
+
+      - name: Build and test
+        env:
+          npm_config_manage_package_manager_versions: ${{ matrix.manage_package_manager_versions }}
+        run: ${{ matrix.pnpm_bin }} test
+
+      - name: Pack the archive with an isolated npm cache
+        env:
+          NPM_CONFIG_CACHE: ${{ runner.temp }}/npm-cache
+        run: |
+          mkdir -p "$NPM_CONFIG_CACHE"
+          npm pack --dry-run --json > "$RUNNER_TEMP/pack-report.json"
+
+      - name: Assert the archive payload
+        run: node scripts/verify-archive.mjs "$RUNNER_TEMP/pack-report.json"
