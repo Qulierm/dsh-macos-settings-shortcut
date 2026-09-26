@@ -18,33 +18,55 @@ intact.
 
 The DSH web shell already ships a Settings dialog; only the macOS shortcut is
 missing. This bundle adds a capture-phase `keydown` listener to the document
-that recognizes exactly one gesture and clicks the existing Settings trigger:
+that recognizes exactly one gesture and then opens Settings through whichever
+control the running shell renders:
 
 1. **Gesture**: `metaKey` set, `ctrl`/`alt`/`shift` unset, and either
    `event.key === ","` or `event.code === "Comma"` (layout-independent). Key
    repeats and IME composition are ignored.
 2. **Claim**: the event is `preventDefault()`-ed and `stopPropagation()`-ed, so
    neither the browser nor an editor handler also reacts to Cmd+,.
-3. **Action**: it clicks the first *visible, collapsed* Settings trigger found
-   through the shell's published accessibility markup,
-   `button[aria-haspopup="dialog"][aria-expanded]`.
+3. **Action — DSH Desktop 2.0.14 and later (account menu).** That shell fills
+   the `settings.launcher` slot with an account button
+   (`[data-slot="settings.launcher"] button[aria-haspopup="menu"]`) instead of a
+   dialog button, and Settings is the *first row* of the menu that button
+   toggles. The listener snapshots the menus already mounted, clicks the
+   collapsed launcher, and then clicks the first row of the one menu that
+   mounts as a result — whether React mounts it synchronously or asynchronously.
+4. **Action — older shells (dialog button).** Where the launcher slot falls back
+   to the shipped dialog button, the listener clicks that button directly; it is
+   accepted only when it actually wraps the `settings.trigger` slot anchor.
+
+Neither shell is patched: the plugin only reads the DOM it is given.
 
 Behavior details worth knowing:
 
-* **It never closes the dialog.** A trigger whose `aria-expanded` is not
-  `"false"` is skipped, so Cmd+, while Settings is open does nothing.
-* **No trigger, no click.** If the shell renders no usable trigger, the gesture
-  is still claimed (Cmd+, stays harmless) but nothing is clicked.
-* **Selector safety.** That accessibility markup is not unique in the shipped
-  shell: the context meter and the usage/statistics pills use it too. The
-  selector above remains the only query; candidates carrying the Settings
-  shell's own structural slot anchor `div[data-slot="settings.trigger"]` (which
-  the shared slot renderer emits inside the Settings trigger button) are
-  preferred, and when no candidate carries it, selection falls back to the
-  first suitable candidate in document order.
-* **No localized text, no private state.** The plugin never reads button
-  labels, React internals, or app files; it only queries the document it is
-  given.
+* **It never closes the dialog.** An open Settings dialog (a
+  `[role="dialog"][aria-modal="true"]` panel containing the `settings.header`
+  slot anchor) is detected first: Cmd+, then claims the gesture and changes
+  nothing. A launcher or trigger whose `aria-expanded` is not `"false"` is never
+  toggled closed.
+* **It never clicks an arbitrary control.** The legacy dialog markup
+  (`button[aria-haspopup="dialog"][aria-expanded]`) is *not* unique in the
+  shipped shell — the context meter and the usage/statistics pills use it too —
+  so a candidate is accepted only with the `settings.trigger` slot anchor
+  inside it. If no such button exists (for example because an account-menu
+  launcher replaced it), nothing is clicked: the gesture is claimed and the
+  shortcut stays harmless.
+* **Menu selection fails closed.** The account-menu flow acts only when exactly
+  one new *visible* menu appeared after the launcher click, while that same
+  launcher is still expanded, and only if the menu's first row is a plain,
+  enabled, visible, non-submenu row. Two new menus, a submenu parent, a disabled
+  or hidden first row, a missing menu, or a launcher that closes again all
+  result in no click.
+* **Bounded observation, never polling.** Asynchronous mounts are handled by one
+  short-lived `MutationObserver` on `document.body` (which also tolerates the
+  menu primitive's hidden measuring pass) plus a 1000 ms safety deadline. Both
+  are released on success, on the deadline, when the launcher closes, on the
+  next valid Cmd+,, and when the Cordis row is disposed.
+* **No localized text, no private state.** The plugin never reads button labels,
+  React internals, Electron APIs, or app files; it queries the document it is
+  given, and all menu work is re-derived from markup each time.
 
 ## How it is wired into a profile
 
@@ -63,7 +85,7 @@ inactive-looking host row is required at all.
 
 ## Prerequisites
 
-* macOS with DSH Desktop installed (verified against 0.1.5-rc.2).
+* macOS with DSH Desktop installed.
 * `node` ≥ 20 and `pnpm` on `PATH` (used for the profile install).
 * A DSH home directory — `$DSH_HOME`, or `~/.dsh` by default.
 * No runtime dependencies: the package installs nothing at run time, and the
@@ -74,7 +96,7 @@ inactive-looking host row is required at all.
 | Component | Supported |
 | --- | --- |
 | Operating system | macOS. Cmd+, is the macOS Settings gesture, and the plugin does nothing on other platforms. |
-| DSH Desktop | ≥ 0.1.5-rc.2. Declared in `dsh.compatibility` and `dshhub.compatibility`, with 0.1.5-rc.2 recorded as `compatible`; the shipped bundle targets the web client the desktop app loads. |
+| DSH Desktop | Two shipped shells are supported. **2.0.14 and later**: the `settings.launcher` slot hosts an account-menu button and Settings is the first menu row. **Older releases** (the 0.1.5 line, where the shell renders the dialog trigger directly): the launcher slot's fallback dialog button is used. `dsh.compatibility` still records only 0.1.5-rc.2 as compatible, because the 2.0.14 account-menu support is not released yet; it is verified against the installed 0.1.7-rc.1 client artifacts by the test suite (see *Release status*). |
 | Node.js | ≥ 20 (`engines.node`). Node is used for the build, the tests, and the profile installer — not by the plugin at runtime. |
 | Surfaces | exactly one: `web` (`dsh.client.platform`), the DSH Desktop browser client. |
 | Capabilities and permissions | none. No host capability is provided and none is required: no network access, no filesystem access from the browser half, no credentials, no settings namespace. |
@@ -91,10 +113,13 @@ pnpm run build     # regenerates lib/index.js and lib/client.js from src/
 pnpm test          # builds, then runs every test file in tests/
 ```
 
-`pnpm test` never touches the live DSH installation: the shortcut tests use
-fake document/button/event objects plus a `node:vm` sandbox for the generated
-artifact, and the installer tests run against temporary `DSH_HOME` fixtures
-with a stub `pnpm`.
+`pnpm test` never modifies the live DSH installation: the shortcut tests drive a
+fake DOM, fake events, a fake `MutationObserver`, and a fake clock (plus a
+`node:vm` sandbox for the generated artifact), and the installer tests run
+against temporary `DSH_HOME` fixtures with a stub `pnpm`. One test reads the
+installed client bundles under `/Applications` **read-only** to assert that the
+launcher, menu row, and slot anchors this plugin relies on are still there; it
+skips with an explicit reason on machines without DSH Desktop installed.
 
 ## Install into the desktop profile
 
@@ -141,7 +166,10 @@ credentials, sessions, other profiles, other dependencies, or unrelated
 
 `dsh.profile.bundles` is resolved (and each listed bundle's patch layer loaded)
 when DSH loads the profile, so the shortcut is **not** active in the currently
-running app. After installing:
+running app. The same is true of this fix: a linked checkout whose `lib/client.js`
+was rebuilt keeps serving the bundle the running app already loaded until the
+profile is loaded again. After installing (or after updating the linked
+checkout):
 
 1. Quit DeepSeek Harness (Cmd+Q).
 2. Start it again.
@@ -180,18 +208,33 @@ with `pnpm run build`.
 
 ## Release status and maintainer handoff
 
-**v0.1.0 is prepared but not published.** Nothing in this repository has been
-uploaded to a registry, and this repository never publishes on its own: it
-stores no npm credentials, defines no registry secret, and contains no workflow
-that uploads a package.
+**npm `0.1.0` is published; the DSH Desktop 2.0.14 fix in this repository is
+not.** `latest` on the registry is `0.1.0` (published 2026-09-18), and that
+artifact still carries the original behavior only: it queries
+`button[aria-haspopup="dialog"][aria-expanded]`, prefers a candidate wrapping the
+`settings.trigger` anchor, and otherwise falls back to the first candidate. It
+has no account-menu path, so in DSH Desktop 2.0.14 — where the `settings.launcher`
+slot hosts the account button and no dialog button exists — it cannot open
+Settings. The account-menu support documented above lives **only on this
+repository's `main` branch** (`src/client.js` plus the regenerated
+`lib/client.js`) and will reach npm only through a separate, explicitly
+authorized release.
 
-* **npm publication is a manual, maintainer-only step.** It requires an
+`package.json` still declares `0.1.0`, and no new published-compatibility claim
+has been added: version bump, registry publication, and the corresponding
+`dsh.compatibility`/`dshhub` assertions are deliberately deferred until the fix
+has been verified in a live app. **Do not publish this checkout under the
+existing version.**
+
+This repository never publishes on its own: it stores no npm credentials,
+defines no registry secret, and contains no workflow that uploads a package.
+
+* **Publishing the fix is a manual, maintainer-only step.** It requires an
   authenticated npm account with publish rights for the unscoped name
-  `dsh-macos-settings-shortcut`. It is deliberately not automated here — CI and
-  the manual release-validation workflow only *verify* the package, and the
-  release-validation run is an offline dry run that cannot upload. A maintainer
-  decides when that step happens, from a clean checkout of the tagged revision,
-  so the published artifact and the verified artifact are the same bytes.
+  `dsh-macos-settings-shortcut`, a version chosen for the new release, and
+  publication from a revision that contains the fix — CI and the manual
+  release-validation workflow only *verify* the package, and the
+  release-validation run is an offline dry run that cannot upload.
 * **Archive check (offline, no registry access).** Confirm exactly what a
   publication would upload:
 
@@ -207,13 +250,13 @@ that uploads a package.
   declared in `files`. `src/`, `tests/`, `scripts/`, `node_modules/`,
   `pnpm-lock.yaml`, and `.github/` stay in Git and never ship.
 * **DSH Market submission is a separate manual marketplace action** performed
-  after npm publication. Marketplaces that consume DSH plugins list *published*
-  npm packages, so a submission made before publication would point at a
-  package that does not exist yet. The `dshhub` record in `package.json`
-  (`schemaVersion`, `displayName`, `summary`, `categories`, `surfaces`,
-  `compatibility`) is the metadata such a submission reads. **No DSH Market
-  listing has been created for this package**, and submission requirements are
-  not verifiable from this repository.
+  after a new npm publication. Marketplaces that consume DSH plugins list
+  *published* npm packages, so a submission describing the account-menu fix
+  before that publication would point at a package that does not contain it.
+  The `dshhub` record in `package.json` (`schemaVersion`, `displayName`,
+  `summary`, `categories`, `surfaces`, `compatibility`) is the metadata such a
+  submission reads. **No DSH Market listing has been created for this package**,
+  and submission requirements are not verifiable from this repository.
 * **Automation.** `.github/workflows/ci.yml` builds, tests, and validates the
   archive on Node 20 and Node 22 with an npm cache under the runner's temporary
   directory. `.github/workflows/release-validation.yml` is manual-only and runs
